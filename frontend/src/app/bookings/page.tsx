@@ -1,196 +1,192 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { useState } from "react";
+import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { MapPin, Calendar, Users, CreditCard, CheckCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { hotels, formatCurrency } from "@/data/dummy";
+import {
+  Calendar, MapPin, Clock, ChevronRight, Search, Filter,
+  CheckCircle, XCircle, AlertCircle
+} from "lucide-react";
+import { bookings, formatCurrency } from "@/data/dummy";
 
-function BookingContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const hotelSlug = searchParams.get("hotel");
-  const roomId = searchParams.get("room");
+type TabKey = "upcoming" | "completed" | "cancelled";
 
-  const hotel = hotels.find((h) => h.slug === hotelSlug);
-  const room = hotel?.rooms.find((r) => r.id === Number(roomId));
+const tabs: { key: TabKey; label: string }[] = [
+  { key: "upcoming", label: "Mendatang" },
+  { key: "completed", label: "Selesai" },
+  { key: "cancelled", label: "Dibatalkan" },
+];
 
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState({
-    checkIn: "", checkOut: "", roomCount: "1", guestCount: "2",
-    guestName: "", guestEmail: "", guestPhone: "", specialRequest: "",
-  });
+const statusConfig: Record<string, { bg: string; text: string; label: string; icon: React.ReactNode }> = {
+  confirmed: { bg: "bg-[#e6eeff]", text: "text-[#004ac6]", label: "Terkonfirmasi", icon: <CheckCircle className="h-3.5 w-3.5" /> },
+  pending: { bg: "bg-[#fff3e0]", text: "text-[#e65100]", label: "Menunggu", icon: <Clock className="h-3.5 w-3.5" /> },
+  completed: { bg: "bg-[#e8f5e9]", text: "text-[#2e7d32]", label: "Selesai", icon: <CheckCircle className="h-3.5 w-3.5" /> },
+  cancelled: { bg: "bg-[#ffdad6]", text: "text-[#ba1a1a]", label: "Dibatalkan", icon: <XCircle className="h-3.5 w-3.5" /> },
+  "checked-in": { bg: "bg-[#e0f2f1]", text: "text-[#00695c]", label: "Check-in", icon: <CheckCircle className="h-3.5 w-3.5" /> },
+};
 
-  if (!hotel || !room) return <div className="container mx-auto px-4 py-16 text-center">Data tidak ditemukan.</div>;
+// Extend bookings with a cancelled one for demo
+const allBookings = [
+  ...bookings,
+  {
+    ...bookings[0],
+    id: 10,
+    bookingCode: "HKU-20260308-010",
+    status: "cancelled",
+    paymentStatus: "refunded",
+    checkIn: "2026-03-15",
+    checkOut: "2026-03-17",
+    createdAt: "2026-03-08",
+  },
+];
 
-  const nights = form.checkIn && form.checkOut ? Math.ceil((new Date(form.checkOut).getTime() - new Date(form.checkIn).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-  const subtotal = room.basePrice * nights * Number(form.roomCount);
-  const tax = subtotal * 0.11;
-  const total = subtotal + tax;
+export default function BookingsPage() {
+  const [activeTab, setActiveTab] = useState<TabKey>("upcoming");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const handleSubmit = () => {
-    setStep(3);
-  };
+  const filteredBookings = allBookings.filter((b) => {
+    if (activeTab === "upcoming") return ["confirmed", "pending", "checked-in"].includes(b.status);
+    if (activeTab === "completed") return b.status === "completed";
+    if (activeTab === "cancelled") return b.status === "cancelled";
+    return true;
+  }).filter((b) =>
+    searchQuery === "" ||
+    b.hotel.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Steps */}
-      <div className="flex items-center justify-center gap-4 mb-8">
-        {["Detail Pesanan", "Data Tamu", "Pembayaran"].map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step > i + 1 ? "bg-green-500 text-white" : step === i + 1 ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500"}`}>
-              {step > i + 1 ? <CheckCircle className="h-4 w-4" /> : i + 1}
-            </div>
-            <span className={`text-sm hidden md:inline ${step === i + 1 ? "font-semibold" : "text-slate-500"}`}>{s}</span>
+    <div className="bg-[#f8f9ff] min-h-screen pb-12">
+      {/* Header */}
+      <div className="bg-white">
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center gap-2 text-sm text-[#434655] mb-2">
+            <Link href="/" className="hover:text-[#004ac6]">Beranda</Link>
+            <ChevronRight className="h-3 w-3" />
+            <span className="text-[#121c2a] font-medium">Booking Saya</span>
           </div>
-        ))}
+          <h1 className="text-2xl font-bold text-[#121c2a]">Booking Saya</h1>
+          <p className="text-sm text-[#434655] mt-1">Kelola dan pantau semua reservasi Anda</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          {step === 1 && (
-            <Card>
-              <CardHeader><CardTitle>Detail Pesanan</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Check-in</Label>
-                    <Input type="date" value={form.checkIn} onChange={(e) => setForm({ ...form, checkIn: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label>Check-out</Label>
-                    <Input type="date" value={form.checkOut} onChange={(e) => setForm({ ...form, checkOut: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label>Jumlah Kamar</Label>
-                    <Input type="number" min="1" value={form.roomCount} onChange={(e) => setForm({ ...form, roomCount: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label>Jumlah Tamu</Label>
-                    <Input type="number" min="1" value={form.guestCount} onChange={(e) => setForm({ ...form, guestCount: e.target.value })} />
-                  </div>
-                </div>
-                {nights > 0 && (
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <p className="text-sm text-blue-800">{nights} malam × {form.roomCount} kamar × {formatCurrency(room.basePrice)} = <strong>{formatCurrency(subtotal)}</strong></p>
-                  </div>
-                )}
-                <Button className="w-full" onClick={() => setStep(2)} disabled={!form.checkIn || !form.checkOut || nights <= 0}>
-                  Lanjut ke Data Tamu
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+      <div className="container mx-auto px-4 mt-6">
+        {/* Tabs & Search */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div className="flex gap-1 bg-[#e6eeff] rounded-xl p-1 w-fit">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-5 py-2.5 rounded-lg text-sm font-medium transition ${
+                  activeTab === tab.key
+                    ? "bg-white text-[#004ac6] shadow-sm"
+                    : "text-[#434655] hover:text-[#121c2a]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-          {step === 2 && (
-            <Card>
-              <CardHeader><CardTitle>Data Tamu</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>Nama Lengkap</Label>
-                  <Input placeholder="Nama sesuai KTP" value={form.guestName} onChange={(e) => setForm({ ...form, guestName: e.target.value })} />
-                </div>
-                <div>
-                  <Label>Email</Label>
-                  <Input type="email" placeholder="email@example.com" value={form.guestEmail} onChange={(e) => setForm({ ...form, guestEmail: e.target.value })} />
-                </div>
-                <div>
-                  <Label>No. HP</Label>
-                  <Input placeholder="08xxxxxxxxxx" value={form.guestPhone} onChange={(e) => setForm({ ...form, guestPhone: e.target.value })} />
-                </div>
-                <div>
-                  <Label>Permintaan Khusus (Opsional)</Label>
-                  <Input placeholder="Contoh: Kamar lantai tinggi, non-smoking" value={form.specialRequest} onChange={(e) => setForm({ ...form, specialRequest: e.target.value })} />
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={() => setStep(1)} className="flex-1">Kembali</Button>
-                  <Button onClick={handleSubmit} disabled={!form.guestName || !form.guestEmail || !form.guestPhone} className="flex-1">
-                    Lanjut ke Pembayaran
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {step === 3 && (
-            <Card>
-              <CardHeader><CardTitle>Pembayaran</CardTitle></CardHeader>
-              <CardContent className="text-center py-12">
-                <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-bold mb-2">Booking Berhasil!</h3>
-                <p className="text-slate-500 mb-2">Kode Booking: <strong>HKU-20260414-001</strong></p>
-                <p className="text-slate-500 mb-6">Silakan lakukan pembayaran melalui Xendit untuk mengkonfirmasi pesanan Anda.</p>
-                <Badge className="mb-4 bg-yellow-100 text-yellow-800">Menunggu Pembayaran</Badge>
-                <div className="flex gap-3 justify-center">
-                  <Button variant="outline" onClick={() => router.push("/bookings")}>Lihat Booking</Button>
-                  <Button><CreditCard className="h-4 w-4 mr-1" /> Bayar Sekarang</Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#434655]" />
+            <input
+              placeholder="Cari kode booking atau hotel..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-white rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#121c2a] placeholder:text-[#434655]/50 outline-none shadow-card w-full sm:w-64"
+            />
+          </div>
         </div>
 
-        {/* Summary Sidebar */}
-        <div>
-          <Card className="sticky top-20">
-            <CardContent className="p-5">
-              <div className="flex gap-3 mb-4">
-                <div className="relative w-20 h-20 rounded-lg overflow-hidden shrink-0">
-                  <Image src={hotel.images[0]} alt={hotel.name} fill className="object-cover" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm">{hotel.name}</h4>
-                  <p className="text-xs text-slate-500 flex items-center gap-1"><MapPin className="h-3 w-3" /> {hotel.city}</p>
-                </div>
-              </div>
-              <Separator />
-              <div className="space-y-2 text-sm mt-4">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Tipe Kamar</span>
-                  <span className="font-medium">{room.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Harga/malam</span>
-                  <span>{formatCurrency(room.basePrice)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Durasi</span>
-                  <span>{nights} malam × {form.roomCount} kamar</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Subtotal</span>
-                  <span>{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Pajak (11%)</span>
-                  <span>{formatCurrency(tax)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span className="text-blue-600">{formatCurrency(total)}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Booking Cards */}
+        {filteredBookings.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-card p-12 text-center">
+            <AlertCircle className="h-12 w-12 text-[#dee9fc] mx-auto mb-3" />
+            <p className="text-[#121c2a] font-semibold mb-1">Tidak ada booking</p>
+            <p className="text-sm text-[#434655] mb-4">
+              {activeTab === "upcoming"
+                ? "Anda belum memiliki reservasi mendatang."
+                : activeTab === "completed"
+                ? "Belum ada booking yang selesai."
+                : "Tidak ada booking yang dibatalkan."}
+            </p>
+            <Link href="/hotels">
+              <button className="gradient-primary text-white rounded-xl px-6 py-2.5 text-sm font-semibold hover:opacity-90 transition">
+                Cari Hotel
+              </button>
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredBookings.map((booking) => {
+              const sc = statusConfig[booking.status] || statusConfig.pending;
+              return (
+                <Link key={booking.id} href={`/bookings/${booking.id}`}>
+                  <div className="bg-white rounded-xl shadow-card hover:shadow-ambient transition-shadow overflow-hidden">
+                    <div className="flex flex-col sm:flex-row">
+                      {/* Hotel Photo */}
+                      <div className="relative w-full sm:w-48 h-40 sm:h-auto shrink-0">
+                        <Image
+                          src={booking.hotel.images[0]}
+                          alt={booking.hotel.name}
+                          fill
+                          className="object-cover"
+                        />
+                        <div className={`absolute top-3 left-3 ${sc.bg} ${sc.text} rounded-lg px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold`}>
+                          {sc.icon}
+                          {sc.label}
+                        </div>
+                      </div>
+
+                      {/* Details */}
+                      <div className="flex-1 p-5">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                          <div>
+                            <p className="text-xs text-[#434655] font-medium mb-1">{booking.bookingCode}</p>
+                            <h3 className="font-bold text-lg text-[#121c2a]">{booking.hotel.name}</h3>
+                            <p className="text-sm text-[#434655] flex items-center gap-1 mt-1">
+                              <MapPin className="h-3.5 w-3.5 text-[#2563eb]" />
+                              {booking.hotel.city}, {booking.hotel.province}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-[#434655]">Total Pembayaran</p>
+                            <p className="text-lg font-bold text-[#004ac6]">{formatCurrency(booking.total)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-[#434655]">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar className="h-4 w-4 text-[#2563eb]" />
+                            {new Date(booking.checkIn).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} — {new Date(booking.checkOut).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="h-4 w-4 text-[#2563eb]" />
+                            {booking.nights} malam · {booking.roomCount} kamar
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#eff4ff]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-[#434655]">{booking.room.name}</span>
+                            <span className="w-1 h-1 rounded-full bg-[#dee9fc]" />
+                            <span className="text-xs text-[#434655]">{booking.guestCount} tamu</span>
+                          </div>
+                          <span className="text-sm font-medium text-[#004ac6] flex items-center gap-1">
+                            Lihat Detail <ChevronRight className="h-4 w-4" />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
-  );
-}
-
-export default function BookingPage() {
-  return (
-    <Suspense fallback={<div className="container mx-auto px-4 py-8">Loading...</div>}>
-      <BookingContent />
-    </Suspense>
   );
 }
