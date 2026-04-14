@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Menu, X, Hotel, User, LogIn } from "lucide-react";
+import { Menu, X, Hotel, User, LogIn, LogOut, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useAuth } from "@/lib/auth";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const { user, isAuthenticated, logout } = useAuth();
 
   const links = [
     { href: "/", label: "Beranda" },
@@ -28,15 +30,31 @@ export default function Navbar() {
               {l.label}
             </Link>
           ))}
+          {isAuthenticated && (
+            <Link href="/bookings" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition">
+              Booking Saya
+            </Link>
+          )}
         </nav>
 
         <div className="hidden md:flex items-center gap-2">
-          <Link href="/auth/login">
-            <Button variant="ghost" size="sm"><LogIn className="h-4 w-4 mr-1" />Masuk</Button>
-          </Link>
-          <Link href="/auth/register">
-            <Button size="sm"><User className="h-4 w-4 mr-1" />Daftar</Button>
-          </Link>
+          {isAuthenticated ? (
+            <>
+              <span className="text-sm text-slate-600 mr-2">Halo, {user?.name}</span>
+              <Button variant="ghost" size="sm" onClick={logout}>
+                <LogOut className="h-4 w-4 mr-1" />Keluar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Link href="/auth/login">
+                <Button variant="ghost" size="sm"><LogIn className="h-4 w-4 mr-1" />Masuk</Button>
+              </Link>
+              <Link href="/auth/register">
+                <Button size="sm"><User className="h-4 w-4 mr-1" />Daftar</Button>
+              </Link>
+            </>
+          )}
         </div>
 
         <Sheet open={open} onOpenChange={setOpen}>
@@ -50,13 +68,26 @@ export default function Navbar() {
                   {l.label}
                 </Link>
               ))}
+              {isAuthenticated && (
+                <Link href="/bookings" onClick={() => setOpen(false)} className="text-lg font-medium">
+                  Booking Saya
+                </Link>
+              )}
               <hr />
-              <Link href="/auth/login" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full">Masuk</Button>
-              </Link>
-              <Link href="/auth/register" onClick={() => setOpen(false)}>
-                <Button className="w-full">Daftar</Button>
-              </Link>
+              {isAuthenticated ? (
+                <Button variant="outline" className="w-full" onClick={() => { logout(); setOpen(false); }}>
+                  <LogOut className="h-4 w-4 mr-1" />Keluar
+                </Button>
+              ) : (
+                <>
+                  <Link href="/auth/login" onClick={() => setOpen(false)}>
+                    <Button variant="outline" className="w-full">Masuk</Button>
+                  </Link>
+                  <Link href="/auth/register" onClick={() => setOpen(false)}>
+                    <Button className="w-full">Daftar</Button>
+                  </Link>
+                </>
+              )}
             </div>
           </SheetContent>
         </Sheet>

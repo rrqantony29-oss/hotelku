@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -12,7 +12,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { hotels, cities, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet } from "@/lib/api";
+
+const defaultCities = [
+  "Jakarta", "Bandung", "Yogyakarta", "Surabaya", "Bali",
+  "Semarang", "Malang", "Solo", "Medan", "Makassar",
+];
 
 const featuredDestinations = [
   { name: "Bali", image: "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=600", count: 124 },
@@ -23,10 +29,26 @@ const featuredDestinations = [
   { name: "Lombok", image: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=600", count: 38 },
 ];
 
-const promos = [
-  { title: "Diskon 25%", subtitle: "Untuk booking pertama kali", code: "HOTELKU25", gradient: "from-[#004ac6] to-[#2563eb]" },
-  { title: "Cashback 15%", subtitle: "Minimal transaksi Rp 500rb", code: "CASHBACK15", gradient: "from-[#784b00] to-[#b8860b]" },
-];
+interface HotelData {
+  id: number;
+  slug: string;
+  name: string;
+  city: string;
+  star_rating: number;
+  avg_rating: number;
+  review_count: number;
+  images: string[];
+  price_from: number;
+  is_featured: boolean;
+}
+
+interface BannerData {
+  id: number;
+  title: string;
+  subtitle: string;
+  gradient: string;
+  code: string;
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -34,8 +56,31 @@ export default function HomePage() {
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState("2");
+  const [featuredHotels, setFeaturedHotels] = useState<HotelData[]>([]);
+  const [promos, setPromos] = useState<BannerData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const cities = defaultCities;
 
-  const featuredHotels = hotels.filter((h) => h.isFeatured);
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [hotelsRes, bannersRes] = await Promise.all([
+          apiGet<HotelData[]>("/hotels", { per_page: "4" }),
+          apiGet<BannerData[]>("/banners"),
+        ]);
+        const hotelsData = Array.isArray(hotelsRes.data) ? hotelsRes.data : (hotelsRes.data as unknown as { data: HotelData[] })?.data || [];
+        setFeaturedHotels(hotelsData.slice(0, 4));
+        if (bannersRes.success && Array.isArray(bannersRes.data)) {
+          setPromos(bannersRes.data);
+        }
+      } catch {
+        // fallback: use empty
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadData();
+  }, []);
 
   const handleSearch = () => {
     const params = new URLSearchParams();
@@ -225,50 +270,63 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {featuredHotels.map((hotel) => (
-              <Link key={hotel.id} href={`/hotels/${hotel.slug}`}>
-                <div className="bg-white rounded-xl overflow-hidden shadow-card hover:shadow-ambient transition-all group">
-                  <div className="relative h-48 overflow-hidden">
-                    <Image
-                      src={hotel.images[0]}
-                      alt={hotel.name}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {/* Star badge */}
-                    <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-0.5">
-                      {Array.from({ length: hotel.starRating }).map((_, i) => (
-                        <Star key={i} className="h-3 w-3 fill-[#784b00] text-[#784b00]" />
-                      ))}
-                    </div>
-                    {/* Rating badge */}
-                    <div className="absolute top-3 right-3 bg-[#004ac6] rounded-lg px-2 py-1 flex items-center gap-1">
-                      <Star className="h-3 w-3 fill-white text-white" />
-                      <span className="text-white text-xs font-semibold">{hotel.avgRating}</span>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="font-semibold text-[#121c2a] mb-1 truncate">{hotel.name}</h3>
-                    <p className="text-sm text-[#434655] flex items-center gap-1 mb-3">
-                      <MapPin className="h-3.5 w-3.5 text-[#2563eb]" /> {hotel.city}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <div className="bg-[#e6eeff] rounded-lg px-2 py-0.5">
-                          <span className="text-xs font-medium text-[#004ac6]">{hotel.reviewCount} review</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[#004ac6] font-bold">
-                          {formatCurrency(Math.min(...hotel.rooms.map((r) => r.basePrice)))}
-                        </p>
-                        <p className="text-xs text-[#434655]">/malam</p>
-                      </div>
-                    </div>
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-xl overflow-hidden shadow-card animate-pulse">
+                  <div className="h-48 bg-[#e6eeff]" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 bg-[#e6eeff] rounded w-3/4" />
+                    <div className="h-3 bg-[#eff4ff] rounded w-1/2" />
+                    <div className="h-4 bg-[#e6eeff] rounded w-1/3" />
                   </div>
                 </div>
-              </Link>
-            ))}
+              ))
+            ) : (
+              featuredHotels.map((hotel) => (
+                <Link key={hotel.id} href={`/hotels/${hotel.slug}`}>
+                  <div className="bg-white rounded-xl overflow-hidden shadow-card hover:shadow-ambient transition-all group">
+                    <div className="relative h-48 overflow-hidden">
+                      <Image
+                        src={hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"}
+                        alt={hotel.name}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {/* Star badge */}
+                      <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-0.5">
+                        {Array.from({ length: hotel.star_rating || 3 }).map((_, i) => (
+                          <Star key={i} className="h-3 w-3 fill-[#784b00] text-[#784b00]" />
+                        ))}
+                      </div>
+                      {/* Rating badge */}
+                      <div className="absolute top-3 right-3 bg-[#004ac6] rounded-lg px-2 py-1 flex items-center gap-1">
+                        <Star className="h-3 w-3 fill-white text-white" />
+                        <span className="text-white text-xs font-semibold">{hotel.avg_rating || "N/A"}</span>
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-semibold text-[#121c2a] mb-1 truncate">{hotel.name}</h3>
+                      <p className="text-sm text-[#434655] flex items-center gap-1 mb-3">
+                        <MapPin className="h-3.5 w-3.5 text-[#2563eb]" /> {hotel.city}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <div className="bg-[#e6eeff] rounded-lg px-2 py-0.5">
+                            <span className="text-xs font-medium text-[#004ac6]">{hotel.review_count || 0} review</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[#004ac6] font-bold">
+                            {formatCurrency(hotel.price_from || 0)}
+                          </p>
+                          <p className="text-xs text-[#434655]">/malam</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
         </div>
       </section>

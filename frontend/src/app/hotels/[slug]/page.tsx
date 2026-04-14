@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -11,7 +11,8 @@ import {
   ChevronRight as ChevronRightIcon, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { hotels, reviews, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet } from "@/lib/api";
 
 const facilityIconMap: Record<string, React.ReactNode> = {
   "WiFi Gratis": <Wifi className="h-4 w-4" />,
@@ -33,13 +34,85 @@ const roomFacilityIcons: Record<string, React.ReactNode> = {
   "Bathtub": <Bath className="h-3.5 w-3.5" />,
 };
 
+interface ApiRoom {
+  id: number;
+  name: string;
+  description: string;
+  max_occupancy: number;
+  bed_count: number;
+  bed_type: string;
+  base_price: number;
+  weekend_price: number;
+  images: string[];
+  facilities: string[];
+  available: number;
+}
+
+interface ApiHotelDetail {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  address: string;
+  city: string;
+  province: string;
+  star_rating: number;
+  avg_rating: number;
+  review_count: number;
+  check_in_time: string;
+  check_out_time: string;
+  images: string[];
+  facilities: string[];
+  rooms: ApiRoom[];
+}
+
+interface ApiReview {
+  id: number;
+  user_name: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+}
+
 export default function HotelDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const hotel = hotels.find((h) => h.slug === params.slug);
+  const [hotel, setHotel] = useState<ApiHotelDetail | null>(null);
+  const [reviews, setReviews] = useState<ApiReview[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [imgIdx, setImgIdx] = useState(0);
   const [showLightbox, setShowLightbox] = useState(false);
   const [activeTab, setActiveTab] = useState<"info" | "rooms" | "reviews">("info");
+
+  useEffect(() => {
+    async function load() {
+      setIsLoading(true);
+      try {
+        const hotelRes = await apiGet<ApiHotelDetail>(`/hotels/${params.slug}`);
+        setHotel(hotelRes.data);
+        try {
+          const reviewRes = await apiGet<ApiReview[]>(`/hotels/${params.slug}/reviews`);
+          if (Array.isArray(reviewRes.data)) setReviews(reviewRes.data);
+        } catch { /* reviews optional */ }
+      } catch {
+        // hotel not found
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
+  }, [params.slug]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-[#004ac6] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-[#434655]">Memuat hotel...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!hotel) {
     return (
@@ -54,13 +127,15 @@ export default function HotelDetailPage() {
     );
   }
 
-  const nextImg = () => setImgIdx((i) => (i + 1) % hotel.images.length);
-  const prevImg = () => setImgIdx((i) => (i - 1 + hotel.images.length) % hotel.images.length);
+  const nextImg = () => setImgIdx((i) => (i + 1) % (hotel.images?.length || 1));
+  const prevImg = () => setImgIdx((i) => (i - 1 + (hotel.images?.length || 1)) % (hotel.images?.length || 1));
 
-  const lowestPrice = Math.min(...hotel.rooms.map((r) => r.basePrice));
+  const lowestPrice = hotel.rooms && hotel.rooms.length > 0
+    ? Math.min(...hotel.rooms.map((r) => r.base_price))
+    : 0;
 
-  // Similar hotels (same city, different hotel)
-  const similarHotels = hotels.filter((h) => h.city === hotel.city && h.id !== hotel.id).slice(0, 3);
+  // Similar hotels placeholder
+  const similarHotels: ApiHotelDetail[] = [];
 
   return (
     <div className="bg-[#f8f9ff] min-h-screen pb-24">
@@ -84,7 +159,7 @@ export default function HotelDetailPage() {
               onClick={() => setShowLightbox(true)}
             >
               <Image
-                src={hotel.images[0]}
+                src={hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"}
                 alt={hotel.name}
                 fill
                 className="object-cover"
@@ -96,7 +171,7 @@ export default function HotelDetailPage() {
             </div>
 
             {/* Side images */}
-            {hotel.images.slice(1, 3).map((img, i) => (
+            {(hotel.images || []).slice(1, 3).map((img, i) => (
               <div
                 key={i}
                 className="hidden md:block relative h-[196px] cursor-pointer group"
@@ -108,7 +183,7 @@ export default function HotelDetailPage() {
             ))}
 
             {/* Fill missing grid spots with placeholders */}
-            {hotel.images.length < 3 && (
+            {(hotel.images || []).length < 3 && (
               <div className="hidden md:flex items-center justify-center bg-[#e6eeff] h-[196px]">
                 <span className="text-sm text-[#434655]">Foto tambahan</span>
               </div>
@@ -130,13 +205,13 @@ export default function HotelDetailPage() {
             <ChevronLeft className="h-10 w-10" />
           </button>
           <div className="relative w-full max-w-4xl h-[60vh] mx-12">
-            <Image src={hotel.images[imgIdx]} alt={hotel.name} fill className="object-contain" />
+            <Image src={hotel.images?.[imgIdx] || hotel.images?.[0] || ""} alt={hotel.name} fill className="object-contain" />
           </div>
           <button onClick={nextImg} className="absolute right-4 text-white/80 hover:text-white">
             <ChevronRight className="h-10 w-10" />
           </button>
           <div className="absolute bottom-6 text-white/60 text-sm">
-            {imgIdx + 1} / {hotel.images.length}
+            {imgIdx + 1} / {(hotel.images || []).length}
           </div>
         </div>
       )}
@@ -147,7 +222,7 @@ export default function HotelDetailPage() {
           <div>
             {/* Stars */}
             <div className="flex items-center gap-1 mb-2">
-              {Array.from({ length: hotel.starRating }).map((_, i) => (
+              {Array.from({ length: hotel.star_rating || 3 }).map((_, i) => (
                 <Star key={i} className="h-4 w-4 fill-[#784b00] text-[#784b00]" />
               ))}
             </div>
@@ -158,9 +233,9 @@ export default function HotelDetailPage() {
             <div className="flex items-center gap-3">
               <div className="bg-[#004ac6] rounded-lg px-3 py-1.5 flex items-center gap-1.5">
                 <Star className="h-4 w-4 fill-white text-white" />
-                <span className="text-white font-bold">{hotel.avgRating}</span>
+                <span className="text-white font-bold">{hotel.avg_rating || "N/A"}</span>
               </div>
-              <span className="text-sm text-[#434655]">{hotel.reviewCount} review</span>
+              <span className="text-sm text-[#434655]">{hotel.review_count || 0} review</span>
               <span className="text-sm text-[#434655]">·</span>
               <span className="text-sm text-[#434655]">{hotel.city}, {hotel.province}</span>
             </div>
@@ -170,11 +245,11 @@ export default function HotelDetailPage() {
           <div className="flex gap-3">
             <div className="bg-[#e6eeff] rounded-xl px-4 py-3 text-center">
               <p className="text-xs text-[#434655] mb-0.5">Check-in</p>
-              <p className="font-bold text-[#121c2a]">{hotel.checkInTime}</p>
+              <p className="font-bold text-[#121c2a]">{hotel.check_in_time || "14:00"}</p>
             </div>
             <div className="bg-[#e6eeff] rounded-xl px-4 py-3 text-center">
               <p className="text-xs text-[#434655] mb-0.5">Check-out</p>
-              <p className="font-bold text-[#121c2a]">{hotel.checkOutTime}</p>
+              <p className="font-bold text-[#121c2a]">{hotel.check_out_time || "12:00"}</p>
             </div>
           </div>
         </div>
@@ -185,8 +260,8 @@ export default function HotelDetailPage() {
         <div className="flex gap-1 bg-[#e6eeff] rounded-xl p-1 w-fit">
           {[
             { key: "info" as const, label: "Informasi" },
-            { key: "rooms" as const, label: `Kamar (${hotel.rooms.length})` },
-            { key: "reviews" as const, label: `Review (${hotel.reviewCount})` },
+            { key: "rooms" as const, label: `Kamar (${(hotel.rooms || []).length})` },
+            { key: "reviews" as const, label: `Review (${hotel.review_count || 0})` },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -251,7 +326,7 @@ export default function HotelDetailPage() {
               <div className="bg-white rounded-xl shadow-card p-5 sticky top-24">
                 <h3 className="font-semibold text-[#121c2a] mb-4">Pilih Kamar</h3>
                 <div className="space-y-3">
-                  {hotel.rooms.map((room) => (
+                  {(hotel.rooms || []).map((room) => (
                     <div
                       key={room.id}
                       className="bg-[#eff4ff] rounded-xl p-4 hover:bg-[#e6eeff] transition cursor-pointer"
@@ -259,10 +334,10 @@ export default function HotelDetailPage() {
                     >
                       <div className="flex items-center justify-between mb-1">
                         <p className="font-medium text-sm text-[#121c2a]">{room.name}</p>
-                        <p className="font-bold text-[#004ac6] text-sm">{formatCurrency(room.basePrice)}</p>
+                        <p className="font-bold text-[#004ac6] text-sm">{formatCurrency(room.base_price)}</p>
                       </div>
                       <p className="text-xs text-[#434655]">
-                        {room.maxOccupancy} tamu · {room.bedCount} {room.bedType} · {room.available} tersisa
+                        {room.max_occupancy} tamu · {room.bed_count} {room.bed_type} · {room.available} tersisa
                       </p>
                     </div>
                   ))}
@@ -278,12 +353,12 @@ export default function HotelDetailPage() {
         {/* Rooms Tab */}
         {activeTab === "rooms" && (
           <div className="space-y-4">
-            {hotel.rooms.map((room) => (
+            {(hotel.rooms || []).map((room) => (
               <div key={room.id} className="bg-white rounded-xl shadow-card overflow-hidden">
                 <div className="flex flex-col md:flex-row">
                   {/* Room image */}
                   <div className="relative w-full md:w-60 h-44 md:h-auto shrink-0">
-                    <Image src={room.images[0]} alt={room.name} fill className="object-cover" />
+                    <Image src={room.images?.[0] || "https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800"} alt={room.name} fill className="object-cover" />
                   </div>
 
                   {/* Room details */}
@@ -295,10 +370,10 @@ export default function HotelDetailPage() {
 
                         <div className="flex items-center gap-4 text-sm text-[#434655] mb-3">
                           <span className="flex items-center gap-1.5">
-                            <Users className="h-4 w-4 text-[#2563eb]" /> {room.maxOccupancy} tamu
+                            <Users className="h-4 w-4 text-[#2563eb]" /> {room.max_occupancy} tamu
                           </span>
                           <span className="flex items-center gap-1.5">
-                            <Bed className="h-4 w-4 text-[#2563eb]" /> {room.bedCount} {room.bedType}
+                            <Bed className="h-4 w-4 text-[#2563eb]" /> {room.bed_count} {room.bed_type}
                           </span>
                         </div>
 
@@ -319,13 +394,13 @@ export default function HotelDetailPage() {
                       {/* Price & Book */}
                       <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-3 md:text-right shrink-0">
                         <div>
-                          <p className="text-xl font-bold text-[#004ac6]">{formatCurrency(room.basePrice)}</p>
+                          <p className="text-xl font-bold text-[#004ac6]">{formatCurrency(room.base_price)}</p>
                           <p className="text-xs text-[#434655]">/malam</p>
                           <p className="text-xs text-green-600 font-medium mt-1">{room.available} kamar tersisa</p>
                         </div>
                         <Button
                           className="gradient-primary text-white rounded-xl px-6 h-11 font-semibold shadow-lg hover:opacity-90 transition"
-                          onClick={() => router.push(`/bookings?hotel=${hotel.slug}&room=${room.id}`)}
+                          onClick={() => router.push(`/checkout?hotel=${hotel.slug}&room=${room.id}`)}
                         >
                           Pesan
                         </Button>
@@ -349,12 +424,12 @@ export default function HotelDetailPage() {
                       {/* Avatar placeholder */}
                       <div className="w-10 h-10 rounded-full bg-[#e6eeff] flex items-center justify-center">
                         <span className="text-sm font-bold text-[#004ac6]">
-                          {r.userName.charAt(0)}
+                          {(r.user_name || "A").charAt(0)}
                         </span>
                       </div>
                       <div>
-                        <p className="font-semibold text-sm text-[#121c2a]">{r.userName}</p>
-                        <p className="text-xs text-[#434655]">{r.createdAt}</p>
+                        <p className="font-semibold text-sm text-[#121c2a]">{r.user_name}</p>
+                        <p className="text-xs text-[#434655]">{r.created_at}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-0.5">
@@ -376,20 +451,20 @@ export default function HotelDetailPage() {
             {/* Rating summary */}
             <div>
               <div className="bg-white rounded-xl shadow-card p-6 sticky top-24 text-center">
-                <div className="text-5xl font-bold text-[#121c2a] mb-2">{hotel.avgRating}</div>
+                <div className="text-5xl font-bold text-[#121c2a] mb-2">{hotel.avg_rating || "N/A"}</div>
                 <div className="flex items-center justify-center gap-1 mb-2">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star
                       key={i}
                       className={`h-5 w-5 ${
-                        i < Math.round(hotel.avgRating)
+                        i < Math.round(hotel.avg_rating || 0)
                           ? "fill-[#784b00] text-[#784b00]"
                           : "text-[#dee9fc]"
                       }`}
                     />
                   ))}
                 </div>
-                <p className="text-sm text-[#434655]">{hotel.reviewCount} review</p>
+                <p className="text-sm text-[#434655]">{hotel.review_count || 0} review</p>
               </div>
             </div>
           </div>
@@ -414,19 +489,19 @@ export default function HotelDetailPage() {
                 <div className="bg-white rounded-xl overflow-hidden shadow-card hover:shadow-ambient transition-shadow group">
                   <div className="relative h-44 overflow-hidden">
                     <Image
-                      src={h.images[0]}
+                      src={h.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"}
                       alt={h.name}
                       fill
                       className="object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-0.5">
-                      {Array.from({ length: h.starRating }).map((_, i) => (
+                      {Array.from({ length: h.star_rating || 3 }).map((_, i) => (
                         <Star key={i} className="h-3 w-3 fill-[#784b00] text-[#784b00]" />
                       ))}
                     </div>
-                    <div className="absolute top-3 right-3 bg-[#004ac6] rounded-lg px-2 py-1 flex items-center gap-1">
+                      <div className="absolute top-3 right-3 bg-[#004ac6] rounded-lg px-2 py-1 flex items-center gap-1">
                       <Star className="h-3 w-3 fill-white text-white" />
-                      <span className="text-white text-xs font-semibold">{h.avgRating}</span>
+                      <span className="text-white text-xs font-semibold">{h.avg_rating || "N/A"}</span>
                     </div>
                   </div>
                   <div className="p-4">
@@ -436,11 +511,11 @@ export default function HotelDetailPage() {
                     </p>
                     <div className="flex items-center justify-between">
                       <span className="bg-[#e6eeff] text-[#004ac6] text-xs font-medium px-2 py-0.5 rounded-lg">
-                        {h.reviewCount} review
+                        {h.review_count || 0} review
                       </span>
                       <div>
                         <p className="text-[#004ac6] font-bold text-right">
-                          {formatCurrency(Math.min(...h.rooms.map((r) => r.basePrice)))}
+                          {formatCurrency(h.rooms?.[0]?.base_price || 0)}
                         </p>
                         <p className="text-xs text-[#434655] text-right">/malam</p>
                       </div>

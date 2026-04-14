@@ -1,27 +1,57 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
   ChevronRight, Star, Camera, Send, ArrowLeft, CheckCircle, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { bookings } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet, apiPost } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
 const MAX_CHARS = 1000;
+
+interface BookingInfo {
+  id: number;
+  booking_code: string;
+  hotel: { name: string; images: string[] };
+  check_in: string;
+  check_out: string;
+  nights: number;
+  room: { name: string };
+}
 
 export default function ReviewPage() {
   const params = useParams();
   const router = useRouter();
-  const booking = bookings.find((b) => b.id === Number(params.id));
-
+  const [booking, setBooking] = useState<BookingInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) { setIsLoading(false); return; }
+    apiGet<BookingInfo>(`/bookings/${params.id}`)
+      .then(res => setBooking(res.data))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [params.id]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#004ac6] border-t-transparent rounded-full animate-spin mx-auto" />
+      </div>
+    );
+  }
 
   if (!booking) {
     return (
@@ -36,14 +66,32 @@ export default function ReviewPage() {
     );
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (rating === 0) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setError("");
+    try {
+      await apiPost(`/bookings/${params.id}/review`, { rating, comment });
       setIsSubmitted(true);
-    }, 1500);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal mengirim review");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (!booking) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[#121c2a] font-semibold text-lg mb-2">Booking tidak ditemukan</p>
+          <Link href="/bookings" className="text-sm text-[#004ac6] font-medium hover:underline">
+            Kembali ke daftar booking
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const ratingLabels = ["", "Sangat Buruk", "Buruk", "Cukup", "Bagus", "Sangat Bagus"];
 
@@ -83,7 +131,7 @@ export default function ReviewPage() {
             <ChevronRight className="h-3 w-3" />
             <Link href="/bookings" className="hover:text-[#004ac6]">Booking Saya</Link>
             <ChevronRight className="h-3 w-3" />
-            <Link href={`/bookings/${booking.id}`} className="hover:text-[#004ac6]">{booking.bookingCode}</Link>
+            <Link href={`/bookings/${booking.id}`} className="hover:text-[#004ac6]">{booking.booking_code}</Link>
             <ChevronRight className="h-3 w-3" />
             <span className="text-[#121c2a] font-medium">Review</span>
           </div>
@@ -97,12 +145,12 @@ export default function ReviewPage() {
         <div className="bg-white rounded-xl shadow-card p-6">
           <div className="flex gap-4">
             <div className="relative w-24 h-24 rounded-xl overflow-hidden shrink-0">
-              <Image src={booking.hotel.images[0]} alt={booking.hotel.name} fill className="object-cover" />
+              <Image src={booking.hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"} alt={booking.hotel.name} fill className="object-cover" />
             </div>
             <div>
               <h3 className="font-bold text-lg text-[#121c2a]">{booking.hotel.name}</h3>
               <p className="text-sm text-[#434655] mt-1">
-                {new Date(booking.checkIn).toLocaleDateString("id-ID", { day: "numeric", month: "long" })} — {new Date(booking.checkOut).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                {new Date(booking.check_in).toLocaleDateString("id-ID", { day: "numeric", month: "long" })} — {new Date(booking.check_out).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
               </p>
               <p className="text-sm text-[#434655]">{booking.nights} malam · {booking.room.name}</p>
             </div>
@@ -170,6 +218,9 @@ export default function ReviewPage() {
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-3">
+          {error && (
+            <div className="w-full bg-[#ffdad6] text-[#ba1a1a] rounded-xl p-3 text-sm mb-2">{error}</div>
+          )}
           <Link href={`/bookings/${booking.id}`} className="flex-1">
             <Button variant="outline" className="w-full rounded-xl h-12 font-semibold text-[#434655]">
               <ArrowLeft className="h-4 w-4 mr-2" /> Kembali

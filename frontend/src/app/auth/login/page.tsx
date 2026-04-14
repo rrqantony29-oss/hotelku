@@ -2,14 +2,35 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Hotel, Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    setError("");
+    setIsLoading(true);
+    try {
+      await login(email, password);
+      router.push("/");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Login gagal. Coba lagi.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="bg-[#f8f9ff] min-h-screen flex">
@@ -64,7 +85,11 @@ export default function LoginPage() {
           <h2 className="text-2xl font-bold text-[#121c2a] mb-2">Masuk ke HotelKu</h2>
           <p className="text-sm text-[#434655] mb-8">Masukkan email dan password untuk melanjutkan</p>
 
-          <div className="space-y-4">
+          {error && (
+            <div className="bg-[#ffdad6] text-[#ba1a1a] rounded-xl p-3 text-sm mb-4">{error}</div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-sm font-medium text-[#121c2a] mb-1.5 block">Email</label>
               <div className="relative">
@@ -82,7 +107,7 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-sm font-medium text-[#121c2a]">Password</label>
-                <button className="text-xs text-[#004ac6] font-medium hover:underline">Lupa password?</button>
+                <button type="button" className="text-xs text-[#004ac6] font-medium hover:underline">Lupa password?</button>
               </div>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#434655]" />
@@ -94,6 +119,7 @@ export default function LoginPage() {
                   className="bg-[#eff4ff] border-0 rounded-xl h-12 pl-11 pr-11 text-[#121c2a] placeholder:text-[#434655]/50"
                 />
                 <button
+                  type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-[#434655] hover:text-[#121c2a]"
                 >
@@ -102,10 +128,21 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <Button className="w-full gradient-primary text-white rounded-xl h-12 font-semibold text-base shadow-lg hover:opacity-90 transition">
-              Masuk <ArrowRight className="h-4 w-4 ml-2" />
+            <Button
+              type="submit"
+              disabled={isLoading || !email || !password}
+              className="w-full gradient-primary text-white rounded-xl h-12 font-semibold text-base shadow-lg hover:opacity-90 transition disabled:opacity-50"
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Memproses...
+                </span>
+              ) : (
+                <>Masuk <ArrowRight className="h-4 w-4 ml-2" /></>
+              )}
             </Button>
-          </div>
+          </form>
 
           {/* Divider */}
           <div className="flex items-center gap-4 my-6">

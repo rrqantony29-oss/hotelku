@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -9,7 +10,9 @@ import {
   Star, FileText, Share2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { bookings, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet, apiPost } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
 const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
   confirmed: { bg: "bg-[#e6eeff]", text: "text-[#004ac6]", label: "Terkonfirmasi" },
@@ -26,9 +29,53 @@ const timelineSteps = [
   { key: "completed", label: "Selesai", desc: "Menginap selesai" },
 ];
 
+interface ApiBookingDetail {
+  id: number;
+  booking_code: string;
+  hotel: { id: number; name: string; city: string; province: string; images: string[]; address: string; check_in_time: string; check_out_time: string; star_rating: number };
+  room: { id: number; name: string; description?: string; bed_count?: number; bed_type?: string; max_occupancy?: number };
+  check_in: string;
+  check_out: string;
+  nights: number;
+  room_count: number;
+  guest_count: number;
+  price_per_night: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  guest_name: string;
+  guest_email: string;
+  guest_phone: string;
+  special_request: string;
+  status: string;
+  payment_status: string;
+  created_at: string;
+}
+
 export default function BookingDetailPage() {
   const params = useParams();
-  const booking = bookings.find((b) => b.id === Number(params.id));
+  const [booking, setBooking] = useState<ApiBookingDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) { setIsLoading(false); return; }
+    apiGet<ApiBookingDetail>(`/bookings/${params.id}`)
+      .then(res => setBooking(res.data))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [params.id]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-[#004ac6] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-[#434655]">Memuat...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!booking) {
     return (
@@ -58,12 +105,12 @@ export default function BookingDetailPage() {
             <ChevronRight className="h-3 w-3" />
             <Link href="/bookings" className="hover:text-[#004ac6]">Booking Saya</Link>
             <ChevronRight className="h-3 w-3" />
-            <span className="text-[#121c2a] font-medium">{booking.bookingCode}</span>
+            <span className="text-[#121c2a] font-medium">{booking.booking_code}</span>
           </div>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-[#121c2a]">Detail Booking</h1>
-              <p className="text-sm text-[#434655] mt-1">Kode: {booking.bookingCode}</p>
+              <p className="text-sm text-[#434655] mt-1">Kode: {booking.booking_code}</p>
             </div>
             <div className={`${sc.bg} ${sc.text} rounded-xl px-4 py-2 flex items-center gap-2 font-semibold text-sm`}>
               {sc.label}
@@ -111,7 +158,7 @@ export default function BookingDetailPage() {
             {/* Hotel Info */}
             <div className="bg-white rounded-xl shadow-card overflow-hidden">
               <div className="relative h-48">
-                <Image src={booking.hotel.images[0]} alt={booking.hotel.name} fill className="object-cover" />
+                <Image src={booking.hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"} alt={booking.hotel.name} fill className="object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                 <div className="absolute bottom-4 left-4 right-4">
                   <h3 className="font-bold text-xl text-white">{booking.hotel.name}</h3>
@@ -125,25 +172,25 @@ export default function BookingDetailPage() {
                   <div className="bg-[#eff4ff] rounded-xl p-3 text-center">
                     <Calendar className="h-5 w-5 text-[#2563eb] mx-auto mb-1" />
                     <p className="text-xs text-[#434655]">Check-in</p>
-                    <p className="font-bold text-sm text-[#121c2a]">{new Date(booking.checkIn).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</p>
-                    <p className="text-xs text-[#434655]">{booking.hotel.checkInTime}</p>
+                    <p className="font-bold text-sm text-[#121c2a]">{new Date(booking.check_in).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</p>
+                    <p className="text-xs text-[#434655]">{booking.hotel.check_in_time || "14:00"}</p>
                   </div>
                   <div className="bg-[#eff4ff] rounded-xl p-3 text-center">
                     <Calendar className="h-5 w-5 text-[#2563eb] mx-auto mb-1" />
                     <p className="text-xs text-[#434655]">Check-out</p>
-                    <p className="font-bold text-sm text-[#121c2a]">{new Date(booking.checkOut).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</p>
-                    <p className="text-xs text-[#434655]">{booking.hotel.checkOutTime}</p>
+                    <p className="font-bold text-sm text-[#121c2a]">{new Date(booking.check_out).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</p>
+                    <p className="text-xs text-[#434655]">{booking.hotel.check_out_time || "12:00"}</p>
                   </div>
                   <div className="bg-[#eff4ff] rounded-xl p-3 text-center">
                     <Clock className="h-5 w-5 text-[#2563eb] mx-auto mb-1" />
                     <p className="text-xs text-[#434655]">Durasi</p>
                     <p className="font-bold text-sm text-[#121c2a]">{booking.nights} malam</p>
-                    <p className="text-xs text-[#434655]">{booking.roomCount} kamar</p>
+                    <p className="text-xs text-[#434655]">{booking.room_count} kamar</p>
                   </div>
                   <div className="bg-[#eff4ff] rounded-xl p-3 text-center">
                     <Users className="h-5 w-5 text-[#2563eb] mx-auto mb-1" />
                     <p className="text-xs text-[#434655]">Tamu</p>
-                    <p className="font-bold text-sm text-[#121c2a]">{booking.guestCount} orang</p>
+                    <p className="font-bold text-sm text-[#121c2a]">{booking.guest_count} orang</p>
                     <p className="text-xs text-[#434655]">&nbsp;</p>
                   </div>
                 </div>
@@ -159,32 +206,32 @@ export default function BookingDetailPage() {
                     <Bed className="h-5 w-5 text-[#2563eb]" />
                     <p className="font-semibold text-[#121c2a]">{booking.room.name}</p>
                   </div>
-                  <p className="text-sm text-[#434655]">{booking.room.description}</p>
-                  <p className="text-sm text-[#434655] mt-1">{booking.room.bedCount} {booking.room.bedType} · Maks {booking.room.maxOccupancy} tamu</p>
+                  <p className="text-sm text-[#434655]">{booking.room.description || ""}</p>
+                  <p className="text-sm text-[#434655] mt-1">{booking.room.bed_count || 1} {booking.room.bed_type || "Bed"} · Maks {booking.room.max_occupancy || 2} tamu</p>
                 </div>
                 <div className="bg-[#eff4ff] rounded-xl p-4">
                   <p className="font-semibold text-[#121c2a] mb-3">Data Tamu</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                     <div>
                       <p className="text-[#434655]">Nama</p>
-                      <p className="font-medium text-[#121c2a]">{booking.guestName}</p>
+                      <p className="font-medium text-[#121c2a]">{booking.guest_name}</p>
                     </div>
                     <div>
                       <p className="text-[#434655]">Email</p>
                       <p className="font-medium text-[#121c2a] flex items-center gap-1">
-                        <Mail className="h-3.5 w-3.5 text-[#2563eb]" /> {booking.guestEmail}
+                        <Mail className="h-3.5 w-3.5 text-[#2563eb]" /> {booking.guest_email}
                       </p>
                     </div>
                     <div>
                       <p className="text-[#434655]">No. HP</p>
                       <p className="font-medium text-[#121c2a] flex items-center gap-1">
-                        <Phone className="h-3.5 w-3.5 text-[#2563eb]" /> {booking.guestPhone}
+                        <Phone className="h-3.5 w-3.5 text-[#2563eb]" /> {booking.guest_phone}
                       </p>
                     </div>
-                    {booking.specialRequest && (
+                    {booking.special_request && (
                       <div>
                         <p className="text-[#434655]">Permintaan Khusus</p>
-                        <p className="font-medium text-[#121c2a]">{booking.specialRequest}</p>
+                        <p className="font-medium text-[#121c2a]">{booking.special_request}</p>
                       </div>
                     )}
                   </div>
@@ -197,7 +244,7 @@ export default function BookingDetailPage() {
               <h2 className="font-semibold text-[#121c2a] text-lg mb-4">Rincian Harga</h2>
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-[#434655]">{formatCurrency(booking.pricePerNight)} × {booking.nights} malam × {booking.roomCount} kamar</span>
+                  <span className="text-[#434655]">{formatCurrency(booking.price_per_night)} × {booking.nights} malam × {booking.room_count} kamar</span>
                   <span className="text-[#121c2a] font-medium">{formatCurrency(booking.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">

@@ -2,17 +2,48 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Hotel, Mail, Lock, Eye, EyeOff, ArrowRight, User, Phone, Building2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/auth";
 
 type Role = "customer" | "partner";
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const { register } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", confirmPassword: "" });
   const [role, setRole] = useState<Role>("customer");
   const [showPassword, setShowPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!form.name || !form.email || !form.password || !form.confirmPassword) return;
+    if (form.password !== form.confirmPassword) {
+      setError("Password tidak sama");
+      return;
+    }
+    setError("");
+    setIsLoading(true);
+    try {
+      await register({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        password_confirmation: form.confirmPassword,
+        phone: form.phone,
+        role,
+      });
+      router.push("/");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Registrasi gagal. Coba lagi.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="bg-[#f8f9ff] min-h-screen flex">
@@ -113,6 +144,10 @@ export default function RegisterPage() {
             </div>
           </div>
 
+          {error && (
+            <div className="bg-[#ffdad6] text-[#ba1a1a] rounded-xl p-3 text-sm mb-4">{error}</div>
+          )}
+
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-[#121c2a] mb-1.5 block">Nama Lengkap *</label>
@@ -208,10 +243,18 @@ export default function RegisterPage() {
             </div>
 
             <Button
-              disabled={!agreeTerms}
+              onClick={handleSubmit}
+              disabled={!agreeTerms || isLoading}
               className="w-full gradient-primary text-white rounded-xl h-12 font-semibold text-base shadow-lg hover:opacity-90 transition disabled:opacity-50"
             >
-              Daftar Sekarang <ArrowRight className="h-4 w-4 ml-2" />
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Mendaftar...
+                </span>
+              ) : (
+                <>Daftar Sekarang <ArrowRight className="h-4 w-4 ml-2" /></>
+              )}
             </Button>
           </div>
 

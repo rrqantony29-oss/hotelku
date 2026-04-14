@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -11,7 +11,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { hotels, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet, apiPost } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
 const paymentMethods = [
   { id: "va", label: "Virtual Account", desc: "BCA, Mandiri, BNI, BRI", icon: Landmark },
@@ -19,14 +21,50 @@ const paymentMethods = [
   { id: "cc", label: "Kartu Kredit", desc: "Visa, Mastercard, JCB", icon: CreditCard },
 ];
 
+interface ApiRoom {
+  id: number;
+  name: string;
+  description: string;
+  max_occupancy: number;
+  bed_count: number;
+  bed_type: string;
+  base_price: number;
+  images: string[];
+  facilities: string[];
+  available: number;
+}
+
+interface ApiHotelDetail {
+  id: number;
+  slug: string;
+  name: string;
+  city: string;
+  star_rating: number;
+  images: string[];
+  rooms: ApiRoom[];
+}
+
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const hotelSlug = searchParams.get("hotel");
   const roomId = searchParams.get("room");
 
-  const hotel = hotels.find((h) => h.slug === hotelSlug);
-  const room = hotel?.rooms.find((r) => r.id === Number(roomId));
+  const [hotel, setHotel] = useState<ApiHotelDetail | null>(null);
+  const [room, setRoom] = useState<ApiRoom | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!hotelSlug) { setIsLoading(false); return; }
+    apiGet<ApiHotelDetail>(`/hotels/${hotelSlug}`)
+      .then(res => {
+        setHotel(res.data);
+        const r = res.data.rooms?.find((rm: ApiRoom) => rm.id === Number(roomId));
+        if (r) setRoom(r);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [hotelSlug, roomId]);
 
   const checkIn = searchParams.get("checkIn") || "2026-04-20";
   const checkOut = searchParams.get("checkOut") || "2026-04-22";
@@ -45,6 +83,15 @@ function CheckoutContent() {
   });
   const [paymentMethod, setPaymentMethod] = useState("va");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState("");
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#004ac6] border-t-transparent rounded-full animate-spin mx-auto" />
+      </div>
+    );
+  }
 
   if (!hotel || !room) {
     return (
@@ -59,18 +106,40 @@ function CheckoutContent() {
     );
   }
 
-  const subtotal = room.basePrice * nights * roomCount;
+  const subtotal = room.base_price * nights * roomCount;
   const serviceFee = Math.round(subtotal * 0.02);
   const tax = Math.round(subtotal * 0.11);
   const total = subtotal + serviceFee + tax;
 
   const isValid = form.guestName && form.guestEmail && form.guestPhone;
 
-  const handlePay = () => {
+  const handlePay = async () => {
+    const token = getToken();
+    if (!token) {
+      router.push("/auth/login");
+      return;
+    }
     setIsProcessing(true);
-    setTimeout(() => {
-      router.push("/bookings");
-    }, 2000);
+    setError("");
+    try {
+      const res = await apiPost<{ id: number }>("/bookings", {
+        hotel_id: hotel.id,
+        room_id: room.id,
+        check_in: checkIn,
+        check_out: checkOut,
+        rooms: roomCount,
+        guests: guestCount,
+        guest_name: form.guestName,
+        guest_email: form.guestEmail,
+        guest_phone: form.guestPhone,
+        special_request: form.specialRequest,
+        payment_method: paymentMethod,
+      });
+      router.push(`/bookings/${res.data.id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal membuat booking");
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -151,6 +220,9 @@ function CheckoutContent() {
 
             {/* Payment Method */}
             <div className="bg-white rounded-xl shadow-card p-6">
+              {error && (
+                <div className="bg-[#ffdad6] text-[#ba1a1a] rounded-xl p-3 text-sm mb-4">{error}</div>
+              )}
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-[#e6eeff] flex items-center justify-center">
                   <CreditCard className="h-5 w-5 text-[#004ac6]" />
@@ -208,7 +280,7 @@ function CheckoutContent() {
               {/* Hotel Info */}
               <div className="flex gap-3 mb-4">
                 <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0">
-                  <Image src={hotel.images[0]} alt={hotel.name} fill className="object-cover" />
+                  <Image src={hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"} alt={hotel.name} fill className="object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-bold text-sm text-[#121c2a] truncate">{hotel.name}</h4>
@@ -216,7 +288,7 @@ function CheckoutContent() {
                     <MapPin className="h-3 w-3 text-[#2563eb]" /> {hotel.city}
                   </p>
                   <div className="flex items-center gap-1 mt-1">
-                    {Array.from({ length: hotel.starRating }).map((_, i) => (
+                    {Array.from({ length: hotel.star_rating || 3 }).map((_, i) => (
                       <div key={i} className="w-3 h-3 rounded-full bg-[#784b00]" />
                     ))}
                   </div>
@@ -244,7 +316,7 @@ function CheckoutContent() {
               {/* Price Breakdown */}
               <div className="space-y-3 text-sm mb-4">
                 <div className="flex justify-between">
-                  <span className="text-[#434655]">{formatCurrency(room.basePrice)} × {nights} malam × {roomCount} kamar</span>
+                  <span className="text-[#434655]">{formatCurrency(room.base_price)} × {nights} malam × {roomCount} kamar</span>
                   <span className="text-[#121c2a] font-medium">{formatCurrency(subtotal)}</span>
                 </div>
                 <div className="flex justify-between">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -9,7 +9,9 @@ import {
   ArrowLeft, CheckCircle, Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { bookings, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet, apiPost } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
 const cancelReasons = [
   "Perubahan jadwal perjalanan",
@@ -20,13 +22,44 @@ const cancelReasons = [
   "Alasan lainnya",
 ];
 
+interface BookingInfo {
+  id: number;
+  booking_code: string;
+  hotel: { name: string; city: string; images: string[] };
+  room: { name: string };
+  check_in: string;
+  check_out: string;
+  nights: number;
+  room_count: number;
+  total: number;
+}
+
 export default function CancelBookingPage() {
   const params = useParams();
   const router = useRouter();
-  const booking = bookings.find((b) => b.id === Number(params.id));
+  const [booking, setBooking] = useState<BookingInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [reason, setReason] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) { setIsLoading(false); return; }
+    apiGet<BookingInfo>(`/bookings/${params.id}`)
+      .then(res => setBooking(res.data))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [params.id]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#004ac6] border-t-transparent rounded-full animate-spin mx-auto" />
+      </div>
+    );
+  }
 
   if (!booking) {
     return (
@@ -44,13 +77,31 @@ export default function CancelBookingPage() {
   const refundAmount = Math.round(booking.total * 0.85);
   const cancellationFee = booking.total - refundAmount;
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     setIsConfirming(true);
-    setTimeout(() => {
-      setIsConfirming(false);
+    setError("");
+    try {
+      await apiPost(`/bookings/${params.id}/cancel`, { reason });
       setIsCancelled(true);
-    }, 1500);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Gagal membatalkan booking");
+    } finally {
+      setIsConfirming(false);
+    }
   };
+
+  if (!booking) {
+    return (
+      <div className="bg-[#f8f9ff] min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-[#121c2a] font-semibold text-lg mb-2">Booking tidak ditemukan</p>
+          <Link href="/bookings" className="text-sm text-[#004ac6] font-medium hover:underline">
+            Kembali ke daftar booking
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (isCancelled) {
     return (
@@ -61,7 +112,7 @@ export default function CancelBookingPage() {
           </div>
           <h2 className="text-xl font-bold text-[#121c2a] mb-2">Booking Dibatalkan</h2>
           <p className="text-sm text-[#434655] mb-2">
-            Booking <strong>{booking.bookingCode}</strong> berhasil dibatalkan.
+            Booking <strong>{booking.booking_code}</strong> berhasil dibatalkan.
           </p>
           <p className="text-sm text-[#434655] mb-6">
             Refund sebesar <strong className="text-[#004ac6]">{formatCurrency(refundAmount)}</strong> akan diproses dalam 3-5 hari kerja.
@@ -86,7 +137,7 @@ export default function CancelBookingPage() {
             <ChevronRight className="h-3 w-3" />
             <Link href="/bookings" className="hover:text-[#004ac6]">Booking Saya</Link>
             <ChevronRight className="h-3 w-3" />
-            <Link href={`/bookings/${booking.id}`} className="hover:text-[#004ac6]">{booking.bookingCode}</Link>
+            <Link href={`/bookings/${booking.id}`} className="hover:text-[#004ac6]">{booking.booking_code}</Link>
             <ChevronRight className="h-3 w-3" />
             <span className="text-[#121c2a] font-medium">Batalkan</span>
           </div>
@@ -110,10 +161,10 @@ export default function CancelBookingPage() {
           <h2 className="font-semibold text-[#121c2a] text-lg mb-4">Ringkasan Booking</h2>
           <div className="flex gap-4 mb-4">
             <div className="relative w-24 h-24 rounded-xl overflow-hidden shrink-0">
-              <Image src={booking.hotel.images[0]} alt={booking.hotel.name} fill className="object-cover" />
+              <Image src={booking.hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"} alt={booking.hotel.name} fill className="object-cover" />
             </div>
             <div>
-              <p className="text-xs text-[#434655] font-medium mb-0.5">{booking.bookingCode}</p>
+              <p className="text-xs text-[#434655] font-medium mb-0.5">{booking.booking_code}</p>
               <h3 className="font-bold text-[#121c2a]">{booking.hotel.name}</h3>
               <p className="text-sm text-[#434655] flex items-center gap-1 mt-1">
                 <MapPin className="h-3.5 w-3.5 text-[#2563eb]" /> {booking.hotel.city}
@@ -123,11 +174,11 @@ export default function CancelBookingPage() {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-[#eff4ff] rounded-xl p-3">
               <p className="text-xs text-[#434655]">Check-in</p>
-              <p className="font-semibold text-sm text-[#121c2a]">{new Date(booking.checkIn).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+              <p className="font-semibold text-sm text-[#121c2a]">{new Date(booking.check_in).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
             </div>
             <div className="bg-[#eff4ff] rounded-xl p-3">
               <p className="text-xs text-[#434655]">Check-out</p>
-              <p className="font-semibold text-sm text-[#121c2a]">{new Date(booking.checkOut).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+              <p className="font-semibold text-sm text-[#121c2a]">{new Date(booking.check_out).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
             </div>
             <div className="bg-[#eff4ff] rounded-xl p-3">
               <p className="text-xs text-[#434655]">Kamar</p>
@@ -135,7 +186,7 @@ export default function CancelBookingPage() {
             </div>
             <div className="bg-[#eff4ff] rounded-xl p-3">
               <p className="text-xs text-[#434655]">Durasi</p>
-              <p className="font-semibold text-sm text-[#121c2a]">{booking.nights} malam · {booking.roomCount} kamar</p>
+              <p className="font-semibold text-sm text-[#121c2a]">{booking.nights} malam · {booking.room_count} kamar</p>
             </div>
           </div>
         </div>
@@ -202,6 +253,11 @@ export default function CancelBookingPage() {
             ))}
           </select>
         </div>
+
+        {/* Error */}
+        {error && (
+          <div className="bg-[#ffdad6] text-[#ba1a1a] rounded-xl p-3 text-sm">{error}</div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-3">

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
   Calendar, MapPin, Clock, ChevronRight, Search, Filter,
   CheckCircle, XCircle, AlertCircle
 } from "lucide-react";
-import { bookings, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
 type TabKey = "upcoming" | "completed" | "cancelled";
 
@@ -25,26 +27,60 @@ const statusConfig: Record<string, { bg: string; text: string; label: string; ic
   "checked-in": { bg: "bg-[#e0f2f1]", text: "text-[#00695c]", label: "Check-in", icon: <CheckCircle className="h-3.5 w-3.5" /> },
 };
 
-// Extend bookings with a cancelled one for demo
-const allBookings = [
-  ...bookings,
-  {
-    ...bookings[0],
-    id: 10,
-    bookingCode: "HKU-20260308-010",
-    status: "cancelled",
-    paymentStatus: "refunded",
-    checkIn: "2026-03-15",
-    checkOut: "2026-03-17",
-    createdAt: "2026-03-08",
-  },
-];
+interface ApiBooking {
+  id: number;
+  booking_code: string;
+  hotel: { id: number; name: string; city: string; province: string; images: string[]; address: string; check_in_time: string; check_out_time: string; star_rating: number };
+  room: { id: number; name: string; description?: string; bed_count?: number; bed_type?: string; max_occupancy?: number };
+  check_in: string;
+  check_out: string;
+  nights: number;
+  room_count: number;
+  guest_count: number;
+  price_per_night: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  guest_name: string;
+  guest_email: string;
+  guest_phone: string;
+  special_request: string;
+  status: string;
+  payment_status: string;
+  created_at: string;
+}
 
 export default function BookingsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
+  const [bookings, setBookings] = useState<ApiBooking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredBookings = allBookings.filter((b) => {
+  useEffect(() => {
+    async function load() {
+      const token = getToken();
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const res = await apiGet<ApiBooking[] | { data: ApiBooking[] }>("/bookings");
+        const data = res.data;
+        if (Array.isArray(data)) {
+          setBookings(data);
+        } else if (data && typeof data === "object" && "data" in data) {
+          setBookings(data.data || []);
+        }
+      } catch {
+        setBookings([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const filteredBookings = bookings.filter((b) => {
     if (activeTab === "upcoming") return ["confirmed", "pending", "checked-in"].includes(b.status);
     if (activeTab === "completed") return b.status === "completed";
     if (activeTab === "cancelled") return b.status === "cancelled";
@@ -52,7 +88,7 @@ export default function BookingsPage() {
   }).filter((b) =>
     searchQuery === "" ||
     b.hotel.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.bookingCode.toLowerCase().includes(searchQuery.toLowerCase())
+    b.booking_code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -101,7 +137,12 @@ export default function BookingsPage() {
         </div>
 
         {/* Booking Cards */}
-        {filteredBookings.length === 0 ? (
+        {isLoading ? (
+          <div className="bg-white rounded-xl shadow-card p-12 text-center">
+            <div className="w-8 h-8 border-2 border-[#004ac6] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-[#434655]">Memuat booking...</p>
+          </div>
+        ) : filteredBookings.length === 0 ? (
           <div className="bg-white rounded-xl shadow-card p-12 text-center">
             <AlertCircle className="h-12 w-12 text-[#dee9fc] mx-auto mb-3" />
             <p className="text-[#121c2a] font-semibold mb-1">Tidak ada booking</p>
@@ -129,7 +170,7 @@ export default function BookingsPage() {
                       {/* Hotel Photo */}
                       <div className="relative w-full sm:w-48 h-40 sm:h-auto shrink-0">
                         <Image
-                          src={booking.hotel.images[0]}
+                          src={booking.hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"}
                           alt={booking.hotel.name}
                           fill
                           className="object-cover"
@@ -144,7 +185,7 @@ export default function BookingsPage() {
                       <div className="flex-1 p-5">
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                           <div>
-                            <p className="text-xs text-[#434655] font-medium mb-1">{booking.bookingCode}</p>
+                            <p className="text-xs text-[#434655] font-medium mb-1">{booking.booking_code}</p>
                             <h3 className="font-bold text-lg text-[#121c2a]">{booking.hotel.name}</h3>
                             <p className="text-sm text-[#434655] flex items-center gap-1 mt-1">
                               <MapPin className="h-3.5 w-3.5 text-[#2563eb]" />
@@ -160,11 +201,11 @@ export default function BookingsPage() {
                         <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-[#434655]">
                           <span className="flex items-center gap-1.5">
                             <Calendar className="h-4 w-4 text-[#2563eb]" />
-                            {new Date(booking.checkIn).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} — {new Date(booking.checkOut).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                            {new Date(booking.check_in).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} — {new Date(booking.check_out).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
                           </span>
                           <span className="flex items-center gap-1.5">
                             <Clock className="h-4 w-4 text-[#2563eb]" />
-                            {booking.nights} malam · {booking.roomCount} kamar
+                            {booking.nights} malam · {booking.room_count} kamar
                           </span>
                         </div>
 
@@ -172,7 +213,7 @@ export default function BookingsPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-[#434655]">{booking.room.name}</span>
                             <span className="w-1 h-1 rounded-full bg-[#dee9fc]" />
-                            <span className="text-xs text-[#434655]">{booking.guestCount} tamu</span>
+                            <span className="text-xs text-[#434655]">{booking.guest_count} tamu</span>
                           </div>
                           <span className="text-sm font-medium text-[#004ac6] flex items-center gap-1">
                             Lihat Detail <ChevronRight className="h-4 w-4" />

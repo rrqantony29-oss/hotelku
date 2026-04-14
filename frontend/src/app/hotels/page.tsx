@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useMemo, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -12,7 +12,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { hotels, cities, facilitiesList, formatCurrency } from "@/data/dummy";
+import { formatCurrency } from "@/data/dummy";
+import { apiGet } from "@/lib/api";
+
+const defaultCities = [
+  "Jakarta", "Bandung", "Yogyakarta", "Surabaya", "Bali",
+  "Semarang", "Malang", "Solo", "Medan", "Makassar",
+];
+
+const facilitiesList = [
+  "WiFi Gratis", "Kolam Renang", "Parkir Gratis", "Sarapan",
+  "AC", "Restoran", "Spa", "Gym", "Room Service", "Laundry",
+];
 
 const facilityIcons: Record<string, React.ReactNode> = {
   "WiFi Gratis": <Wifi className="h-4 w-4" />,
@@ -24,6 +35,21 @@ const facilityIcons: Record<string, React.ReactNode> = {
 
 const accommodationTypes = ["Hotel", "Villa", "Resort", "Guest House"];
 
+interface ApiHotel {
+  id: number;
+  slug: string;
+  name: string;
+  address: string;
+  city: string;
+  province: string;
+  star_rating: number;
+  avg_rating: number;
+  review_count: number;
+  images: string[];
+  facilities: string[];
+  price_from: number;
+}
+
 function HotelsContent() {
   const searchParams = useSearchParams();
   const [city, setCity] = useState(searchParams.get("city") || "");
@@ -34,35 +60,62 @@ function HotelsContent() {
   const [selectedFacilities, setSelectedFacilities] = useState<string[]>([]);
   const [selectedType, setSelectedType] = useState("");
   const [showFilters, setShowFilters] = useState(true);
+  const [hotels, setHotels] = useState<ApiHotel[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+
+  const cities = defaultCities;
+
+  useEffect(() => {
+    async function fetchHotels() {
+      setIsLoading(true);
+      try {
+        const params: Record<string, string> = { per_page: "20" };
+        if (city) params.city = city;
+        if (star) params.star = star;
+        if (minPrice) params.min_price = minPrice;
+        if (maxPrice) params.max_price = maxPrice;
+        if (sortBy === "price_asc") params.sort = "price_asc";
+        else if (sortBy === "price_desc") params.sort = "price_desc";
+        else if (sortBy === "rating") params.sort = "rating";
+
+        const res = await apiGet<ApiHotel[] | { data: ApiHotel[]; total: number }>("/hotels", params);
+        const data = res.data;
+        if (Array.isArray(data)) {
+          setHotels(data);
+          setTotal(data.length);
+        } else if (data && typeof data === "object" && "data" in data) {
+          setHotels(data.data || []);
+          setTotal(data.total || 0);
+        }
+      } catch {
+        setHotels([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchHotels();
+  }, [city, star, minPrice, maxPrice, sortBy]);
+
+  const filtered = useMemo(() => {
+    let result = [...hotels];
+    if (selectedFacilities.length > 0) {
+      result = result.filter((h) =>
+        selectedFacilities.every((f) => (h.facilities || []).includes(f))
+      );
+    }
+    return result;
+  }, [hotels, selectedFacilities]);
+
+  const clearFilters = () => {
+    setCity(""); setStar(""); setMinPrice(""); setMaxPrice("");
+    setSortBy("popular"); setSelectedFacilities([]); setSelectedType("");
+  };
 
   const toggleFacility = (f: string) => {
     setSelectedFacilities((prev) =>
       prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]
     );
-  };
-
-  const filtered = useMemo(() => {
-    let result = [...hotels];
-    if (city) result = result.filter((h) => h.city.toLowerCase().includes(city.toLowerCase()));
-    if (star) result = result.filter((h) => h.starRating === Number(star));
-    if (minPrice) result = result.filter((h) => Math.min(...h.rooms.map((r) => r.basePrice)) >= Number(minPrice));
-    if (maxPrice) result = result.filter((h) => Math.min(...h.rooms.map((r) => r.basePrice)) <= Number(maxPrice));
-    if (selectedFacilities.length > 0) {
-      result = result.filter((h) =>
-        selectedFacilities.every((f) => h.facilities.includes(f))
-      );
-    }
-
-    if (sortBy === "price_asc") result.sort((a, b) => Math.min(...a.rooms.map((r) => r.basePrice)) - Math.min(...b.rooms.map((r) => r.basePrice)));
-    if (sortBy === "price_desc") result.sort((a, b) => Math.min(...b.rooms.map((r) => r.basePrice)) - Math.min(...a.rooms.map((r) => r.basePrice)));
-    if (sortBy === "rating") result.sort((a, b) => b.avgRating - a.avgRating);
-
-    return result;
-  }, [city, star, sortBy, minPrice, maxPrice, selectedFacilities]);
-
-  const clearFilters = () => {
-    setCity(""); setStar(""); setMinPrice(""); setMaxPrice("");
-    setSortBy("popular"); setSelectedFacilities([]); setSelectedType("");
   };
 
   const activeFilterCount = [city, star, minPrice, maxPrice, selectedType].filter(Boolean).length + selectedFacilities.length;
@@ -277,21 +330,35 @@ function HotelsContent() {
             )}
 
             <div className="space-y-4">
-              {filtered.map((hotel) => (
+              {isLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-xl shadow-card overflow-hidden animate-pulse">
+                    <div className="flex flex-col md:flex-row">
+                      <div className="w-full md:w-72 h-52 bg-[#e6eeff] shrink-0" />
+                      <div className="p-5 flex-1 space-y-3">
+                        <div className="h-5 bg-[#e6eeff] rounded w-1/2" />
+                        <div className="h-3 bg-[#eff4ff] rounded w-1/3" />
+                        <div className="h-4 bg-[#e6eeff] rounded w-1/4" />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                filtered.map((hotel) => (
                 <Link key={hotel.id} href={`/hotels/${hotel.slug}`}>
                   <div className="bg-white rounded-xl shadow-card hover:shadow-ambient transition-shadow overflow-hidden group">
                     <div className="flex flex-col md:flex-row">
                       {/* Image */}
                       <div className="relative w-full md:w-72 h-52 md:h-auto shrink-0 overflow-hidden">
                         <Image
-                          src={hotel.images[0]}
+                          src={hotel.images?.[0] || "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800"}
                           alt={hotel.name}
                           fill
                           className="object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         {/* Stars */}
                         <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 flex items-center gap-0.5">
-                          {Array.from({ length: hotel.starRating }).map((_, i) => (
+                          {Array.from({ length: hotel.star_rating || 3 }).map((_, i) => (
                             <Star key={i} className="h-3 w-3 fill-[#784b00] text-[#784b00]" />
                           ))}
                         </div>
@@ -309,7 +376,7 @@ function HotelsContent() {
 
                           {/* Facilities */}
                           <div className="flex flex-wrap gap-2 mb-4">
-                            {hotel.facilities.slice(0, 4).map((f) => (
+                            {(hotel.facilities || []).slice(0, 4).map((f) => (
                               <span
                                 key={f}
                                 className="inline-flex items-center gap-1 bg-[#eff4ff] text-[#434655] text-xs px-2.5 py-1 rounded-lg"
@@ -318,9 +385,9 @@ function HotelsContent() {
                                 {f}
                               </span>
                             ))}
-                            {hotel.facilities.length > 4 && (
+                            {(hotel.facilities || []).length > 4 && (
                               <span className="inline-flex items-center bg-[#e6eeff] text-[#004ac6] text-xs px-2.5 py-1 rounded-lg font-medium">
-                                +{hotel.facilities.length - 4}
+                                +{(hotel.facilities || []).length - 4}
                               </span>
                             )}
                           </div>
@@ -332,17 +399,17 @@ function HotelsContent() {
                           <div className="flex items-center gap-2">
                             <div className="bg-[#004ac6] rounded-lg px-2.5 py-1 flex items-center gap-1">
                               <Star className="h-3.5 w-3.5 fill-white text-white" />
-                              <span className="text-white text-sm font-bold">{hotel.avgRating}</span>
+                              <span className="text-white text-sm font-bold">{hotel.avg_rating || "N/A"}</span>
                             </div>
                             <span className="text-sm text-[#434655]">
-                              {hotel.reviewCount} review
+                              {hotel.review_count || 0} review
                             </span>
                           </div>
 
                           {/* Price */}
                           <div className="text-right">
                             <p className="text-xl font-bold text-[#004ac6]">
-                              {formatCurrency(Math.min(...hotel.rooms.map((r) => r.basePrice)))}
+                              {formatCurrency(hotel.price_from || 0)}
                             </p>
                             <p className="text-xs text-[#434655]">/malam</p>
                           </div>
@@ -351,7 +418,7 @@ function HotelsContent() {
                     </div>
                   </div>
                 </Link>
-              ))}
+              )))}
             </div>
 
             {/* Empty state */}
