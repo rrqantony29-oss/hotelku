@@ -2,13 +2,13 @@
 nixPkgs = ["...", "php83", "php83Extensions.sqlite3", "php83Extensions.mbstring", "php83Extensions.bcmath", "php83Extensions.curl", "php83Extensions.zip"]
 
 [phases.install]
-cmds = ["composer install --no-dev --optimize-autoloader"]
+cmds = ["cd backend && composer install --no-dev --optimize-autoloader"]
 
 [phases.build]
-cmds = ["php artisan config:cache", "php artisan route:cache", "php artisan view:cache"]
+cmds = ["cd backend && php artisan config:cache && php artisan route:cache"]
 
 [start]
-cmd = "php artisan migrate --force && php artisan serve --host 0.0.0.0 --port $PORT"
+cmd = "cd backend && php artisan migrate --force && php artisan db:seed --force && php artisan serve --host 0.0.0.0 --port $PORT"
 
 [variables]
 APP_ENV = "production"
